@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* AG Studio Alpine Dark Theme Styles */
+
+@layer base {
+  body {
+    @apply bg-[#0B0F19] text-slate-100;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+}
+
+/* Custom glow animations */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-pulse-subtle {
+  animation: pulse-subtle 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* AG Grid Dark Customization */
+.ag-theme-alpine-dark {
+  --ag-background-color: #111827;
+  --ag-header-background-color: #1F2937;
+  --ag-odd-row-background-color: #111827;
+  --ag-row-hover-color: #1E293B;
+  --ag-border-color: #374151;
+  --ag-header-column-separator-color: #374151;
+  --ag-foreground-color: #F3F4F6;
+  --ag-secondary-foreground-color: #9CA3AF;
+  --ag-font-family: 'Inter', sans-serif;
+  --ag-font-size: 13px;
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
