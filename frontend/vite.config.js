@@ -11,6 +11,14 @@ export default defineConfig({
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
+      },
+      '/merge': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
+      '/download-merged': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
       }
     }
   }

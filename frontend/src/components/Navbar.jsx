@@ -99,6 +99,17 @@ export default function Navbar({
         {/* Right Action Tools */}
         <div className="flex items-center space-x-2 sm:space-x-3">
           
+          {/* Automated Video + Audio Merger Tool */}
+          <a
+            href="/merge"
+            target="_blank"
+            rel="noreferrer"
+            className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-gradient-to-r from-amber-500/20 via-cyan-500/20 to-blue-500/20 border border-cyan-500/40 text-cyan-300 hover:text-white text-xs font-bold flex items-center space-x-1.5 transition-all shadow-sm"
+            title="1-Tap Tool: Upload screen recording and automatically merge with AI voiceover"
+          >
+            <span>🎬 Merge Video</span>
+          </a>
+          
           {/* Mock Role Switcher Dropdown */}
           <div className="hidden sm:flex items-center space-x-1.5 bg-slate-900/90 border border-slate-800 rounded-lg px-2 py-1">
             <User className="w-3.5 h-3.5 text-slate-400" />

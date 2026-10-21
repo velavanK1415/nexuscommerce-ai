@@ -20,6 +20,7 @@ from app.api import (
     webhooks,
     analytics,
     demo,
+    video_merge,
 )
 
 # Configure logging
@@ -59,6 +60,7 @@ app.include_router(evidence.router)
 app.include_router(webhooks.router)
 app.include_router(analytics.router)
 app.include_router(demo.router)
+app.include_router(video_merge.router)
 
 
 # Mount production frontend static assets if built
