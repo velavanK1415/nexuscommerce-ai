@@ -11,7 +11,8 @@ import {
   ExternalLink,
   Radio,
   FileCheck2,
-  Sparkles
+  Sparkles,
+  RotateCcw
 } from './icons';
 import Tooltip from './Tooltip';
 
@@ -20,7 +21,8 @@ export default function MilestoneTimeline({
   onAdvanceShipment, 
   onAdvanceDelivery, 
   onSimulateWebhook,
-  loading 
+  loading,
+  onStartStepByStepMilestones 
 }) {
   const [carrierName, setCarrierName] = useState('FedEx Priority Freight');
   const [trackingNumber, setTrackingNumber] = useState('');
@@ -28,14 +30,35 @@ export default function MilestoneTimeline({
 
   if (!order) {
     return (
-      <div className="bg-[#111827] border border-slate-800 rounded-2xl p-8 text-center">
-        <div className="w-12 h-12 mx-auto rounded-xl bg-slate-800 flex items-center justify-center mb-3">
-          <Lock className="w-6 h-6 text-slate-500" />
+      <div className="bg-[#111827] border border-blue-500/30 rounded-2xl p-6 sm:p-8 text-center space-y-4 shadow-xl">
+        <div className="w-12 h-12 mx-auto rounded-xl bg-blue-500/20 border border-blue-500/40 flex items-center justify-center">
+          <Lock className="w-6 h-6 text-cyan-400" />
         </div>
-        <h3 className="text-sm font-bold text-white mb-1">Awaiting PayPal Authorization Hold</h3>
-        <p className="text-xs text-slate-400 max-w-sm mx-auto">
-          Complete autonomous negotiation and place a 29-day PayPal authorization hold to activate the 3-Milestone settlement timeline.
-        </p>
+        <div>
+          <h3 className="text-base font-bold text-white mb-1">
+            PayPal 3-Milestone Two-Step Settlement Timeline
+          </h3>
+          <p className="text-xs text-slate-300 max-w-lg mx-auto leading-relaxed">
+            PayPal Orders v2 requires placing a 29-day authorization hold (Milestone 1) before Milestone 2 (Carrier Proof) and Milestone 3 (Delivery Release) can be unlocked.
+          </p>
+        </div>
+
+        <div className="pt-1">
+          <button
+            onClick={onStartStepByStepMilestones}
+            disabled={loading}
+            className="px-6 py-3 rounded-xl bg-gradient-to-r from-amber-500 via-cyan-500 to-blue-600 hover:from-amber-400 hover:to-blue-500 text-slate-950 font-extrabold text-xs shadow-lg shadow-cyan-500/20 flex items-center space-x-2 mx-auto transition-all transform hover:scale-[1.02] disabled:opacity-50"
+          >
+            <Sparkles className="w-4 h-4 text-slate-950" />
+            <span>⚡ Unlock & Test Milestone 2 & Milestone 3 Buttons Now</span>
+          </button>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-3 text-[11px] text-slate-400 font-mono pt-1">
+          <span className="text-blue-300 font-bold">• Step 1: Pre-Auth Hold (100%)</span>
+          <span className="text-amber-300 font-bold">• Step 2: 30% Partial on Dispatch</span>
+          <span className="text-emerald-300 font-bold">• Step 3: 70% Final on Delivery</span>
+        </div>
       </div>
     );
   }
@@ -108,6 +131,18 @@ export default function MilestoneTimeline({
               <CheckCircle2 className="w-3 h-3 text-emerald-400" />
               <span>Final #2: {finalCaptureId}</span>
             </div>
+          )}
+
+          {order.status === 'COMPLETED' && onStartStepByStepMilestones && (
+            <button
+              onClick={onStartStepByStepMilestones}
+              disabled={loading}
+              className="px-3 py-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/50 text-indigo-300 hover:text-white flex items-center space-x-1.5 transition-all text-xs font-semibold"
+              title="Reset order to Milestone 2 to demonstrate manual carrier dispatch click again"
+            >
+              <RotateCcw className="w-3 h-3 text-indigo-400" />
+              <span>Re-Arm Milestones for Demo Video</span>
+            </button>
           )}
         </div>
       </div>

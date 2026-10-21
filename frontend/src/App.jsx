@@ -213,6 +213,60 @@ export default function App() {
     }
   };
 
+  const handleStartStepByStepMilestones = async () => {
+    setLoading(true);
+    addToast({
+      type: 'info',
+      title: 'Placing 29-Day Authorization Hold',
+      message: 'Locking 100% funds under PayPal Orders v2. Unlocking Milestone 2 & 3...',
+    });
+    try {
+      let m = mandate;
+      if (!m) {
+        m = await api.createMandate({
+          item_name: 'NVIDIA H100 SXM5 80GB GPU Cluster',
+          quantity: 100,
+          max_unit_price: 32000.0,
+          max_total_budget: 3200000.0,
+          delivery_deadline: '2026-11-20T00:00:00Z',
+          quality_tier: 'Enterprise',
+        });
+        setMandate(m);
+      }
+
+      let s = session;
+      if (!s || s.status !== 'AGREEMENT_REACHED') {
+        s = await api.startNegotiation({
+          mandate_id: m.id,
+          simulate_violation: null,
+          max_rounds: 3,
+        });
+        setSession(s);
+      }
+
+      const res = await api.authorizeEscrow(s.session_id);
+      setOrder(res.order);
+      if (res.evidence_bundle_id) {
+        const b = await api.getEvidenceBundle(res.evidence_bundle_id);
+        setBundle(b);
+      }
+      await refreshData();
+      addToast({
+        type: 'success',
+        title: 'Milestone 1 Active · Ready for Video Demo!',
+        message: 'Milestone 2 (Submit Carrier Scan) is now unlocked and waiting for your click below.',
+      });
+    } catch (e) {
+      addToast({
+        type: 'error',
+        title: 'Could not initialize milestones',
+        message: e.message,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleAdvanceShipment = async (carrierName, trackingNumber) => {
     if (!order) return;
     setLoading(true);
@@ -572,6 +626,7 @@ export default function App() {
               onAdvanceDelivery={handleAdvanceDelivery}
               onSimulateWebhook={handleSimulateWebhook}
               loading={loading}
+              onStartStepByStepMilestones={handleStartStepByStepMilestones}
             />
           </div>
         )}
