@@ -8,6 +8,10 @@ from typing import Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
+import logging
+
+logger = logging.getLogger("nexus.demo_api")
+
 router = APIRouter(prefix="/api/demo", tags=["Zero-Key Demo Harness"])
 
 
@@ -37,59 +41,65 @@ async def run_full_lifecycle(req: FullLifecycleRequest, orchestrator=Depends(get
     7. Carrier Shipment Proof Ingestion
     8. Delivery Verification & Escrow Release Capture
     """
-    # 1. Mandate
-    mandate_data = {
-        "title": f"Autonomous Sourcing: {req.item_name}",
-        "item_name": req.item_name,
-        "quantity": req.quantity,
-        "max_unit_price": req.max_unit_price,
-        "max_total_budget": req.max_total_budget,
-        "target_categories": ["Networking Hardware", "Edge Infrastructure"],
-    }
-    mandate = orchestrator.create_mandate(mandate_data)
-
-    # 2 & 3. Negotiation
-    violation = "PRICE_SPIKE" if req.simulate_hitl_hold else None
-    session = await orchestrator.run_autonomous_negotiation(
-        mandate_id=mandate.id,
-        simulate_violation=violation,
-    )
-
-    if session.status.value == "HITL_HOLD":
-        return {
-            "lifecycle_status": "HITL_HOLD_TRIGGERED",
-            "mandate": mandate.model_dump(),
-            "session": session.model_dump(),
-            "message": "PolicyEngine detected rule violation and placed order into Human-in-the-Loop review hold.",
+    try:
+        # 1. Mandate
+        mandate_data = {
+            "title": f"Autonomous Sourcing: {req.item_name}",
+            "item_name": req.item_name,
+            "quantity": req.quantity,
+            "max_unit_price": req.max_unit_price,
+            "max_total_budget": req.max_total_budget,
+            "target_categories": ["Networking Hardware", "Edge Infrastructure"],
         }
+        mandate = orchestrator.create_mandate(mandate_data)
 
-    # 4 & 5. PayPal Escrow Authorization & Evidence Bundle Sealing
-    escrow_order, bundle = await orchestrator.finalize_agreement_and_authorize_escrow(session.session_id)
+        # 2 & 3. Negotiation
+        violation = "PRICE_SPIKE" if req.simulate_hitl_hold else None
+        session = await orchestrator.run_autonomous_negotiation(
+            mandate_id=mandate.id,
+            simulate_violation=violation,
+        )
 
-    # 6. Milestone 2: Carrier Shipment Proof
-    escrow_order, bundle = await orchestrator.advance_to_shipment_milestone(
-        order_id=escrow_order.order_id,
-        carrier_name="FedEx Priority Freight",
-    )
+        if session.status.value == "HITL_HOLD":
+            return {
+                "lifecycle_status": "HITL_HOLD_TRIGGERED",
+                "mandate": mandate.model_dump(),
+                "session": session.model_dump(),
+                "escrow_order": None,
+                "evidence_bundle": None,
+                "message": f"PolicyEngine trapped adversarial surge: {session.hitl_reason or 'Mandate boundaries violated.'}. Order halted with $0.00 treasury exposure.",
+            }
 
-    # 7. Milestone 3: Delivery Verification & PayPal Capture
-    escrow_order, bundle = await orchestrator.advance_to_delivery_and_capture(
-        order_id=escrow_order.order_id,
-    )
+        # 4 & 5. PayPal Escrow Authorization & Evidence Bundle Sealing
+        escrow_order, bundle = await orchestrator.finalize_agreement_and_authorize_escrow(session.session_id)
 
-    return {
-        "lifecycle_status": "COMPLETED_SETTLED",
-        "mandate": mandate.model_dump(),
-        "negotiation_session": session.model_dump(),
-        "escrow_order": escrow_order.model_dump(),
-        "evidence_bundle": bundle.model_dump(),
-        "verification_result": {
-            "root_sha256": bundle.bundle_root_hash,
-            "tamper_evident_valid": bundle.tamper_evident_valid,
-            "dispute_defense_grade": "A+",
-            "mandate_diff": bundle.mandate_diff,
-        },
-    }
+        # 6. Milestone 2: Carrier Shipment Proof
+        escrow_order, bundle = await orchestrator.advance_to_shipment_milestone(
+            order_id=escrow_order.order_id,
+            carrier_name="FedEx Priority Freight",
+        )
+
+        # 7. Milestone 3: Delivery Verification & PayPal Capture
+        escrow_order, bundle = await orchestrator.advance_to_delivery_and_capture(
+            order_id=escrow_order.order_id,
+        )
+
+        return {
+            "lifecycle_status": "COMPLETED_SETTLED",
+            "mandate": mandate.model_dump(),
+            "negotiation_session": session.model_dump(),
+            "escrow_order": escrow_order.model_dump(),
+            "evidence_bundle": bundle.model_dump(),
+            "verification_result": {
+                "root_sha256": bundle.bundle_root_hash,
+                "tamper_evident_valid": bundle.tamper_evident_valid,
+                "dispute_defense_grade": "A+",
+                "mandate_diff": bundle.mandate_diff,
+            },
+        }
+    except Exception as exc:
+        logger.error(f"Error in run_full_lifecycle: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Full lifecycle execution failed: {str(exc)}")
 
 
 @router.post("/toggle-mode")

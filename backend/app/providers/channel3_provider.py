@@ -164,6 +164,44 @@ class Channel3Provider:
 
     def set_demo_mode(self, enabled: bool):
         self.demo_mode = enabled
+        if not enabled and not self.api_key:
+            logger.info("Channel3 live mode selected without CHANNEL3_API_KEY; resilient catalog fallback active.")
+
+    def _search_builtin_catalog(
+        self,
+        query: str = "",
+        category: Optional[str] = None,
+        max_price: Optional[float] = None,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        results = []
+        q_tokens = [t for t in query.lower().replace("-", " ").replace(":", " ").split() if len(t) > 2]
+        
+        for item in self.catalog:
+            item_text = f"{item['title']} {item['category']} {item['vendor_name']}".lower()
+            token_matches = sum(1 for t in q_tokens if t in item_text) if q_tokens else 1
+            matches_cat = not category or category.lower() in item["category"].lower()
+            matches_price = not max_price or item["min_bulk_price"] <= max_price * 1.35
+
+            if token_matches > 0 or matches_cat:
+                score = token_matches * 10
+                if matches_cat:
+                    score += 5
+                if matches_price:
+                    score += 5
+                results.append((score, item))
+
+        results.sort(key=lambda x: x[0], reverse=True)
+        sorted_items = [r[1] for r in results]
+
+        if not sorted_items:
+            # If price is specified, select catalog item closest to requested price
+            if max_price:
+                sorted_items = sorted(self.catalog, key=lambda x: abs(x["catalog_ask_price"] - max_price))
+            else:
+                sorted_items = [self.catalog[0]]
+
+        return sorted_items[:limit]
 
     async def search_catalog(
         self,
@@ -174,50 +212,33 @@ class Channel3Provider:
     ) -> List[Dict[str, Any]]:
         """
         Search suppliers and products matching procurement criteria.
+        Falls back to verified built-in enterprise catalog if live API is unavailable.
         """
-        if self.demo_mode:
-            results = []
-            q_tokens = [t for t in query.lower().replace("-", " ").replace(":", " ").split() if len(t) > 2]
-            
-            for item in self.catalog:
-                item_text = f"{item['title']} {item['category']} {item['vendor_name']}".lower()
-                token_matches = sum(1 for t in q_tokens if t in item_text) if q_tokens else 1
-                matches_cat = not category or category.lower() in item["category"].lower()
-                matches_price = not max_price or item["min_bulk_price"] <= max_price * 1.35
+        if self.demo_mode or not self.api_key:
+            return self._search_builtin_catalog(query, category, max_price, limit)
 
-                if token_matches > 0 or matches_cat:
-                    score = token_matches * 10
-                    if matches_cat:
-                        score += 5
-                    if matches_price:
-                        score += 5
-                    results.append((score, item))
+        # LIVE MODE with graceful resilience
+        try:
+            headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+            params = {"query": query, "limit": limit}
+            if category:
+                params["category"] = category
+            if max_price:
+                params["max_price"] = max_price
 
-            results.sort(key=lambda x: x[0], reverse=True)
-            sorted_items = [r[1] for r in results]
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{self.base_url}/search", headers=headers, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                products = data.get("products", [])
+                if products:
+                    return products
+        except Exception as exc:
+            logger.warning(
+                f"Channel3 live search API unavailable ({exc}); gracefully utilizing built-in enterprise catalog."
+            )
 
-            if not sorted_items:
-                # If price is specified, select catalog item closest to requested price
-                if max_price:
-                    sorted_items = sorted(self.catalog, key=lambda x: abs(x["catalog_ask_price"] - max_price))
-                else:
-                    sorted_items = [self.catalog[0]]
-
-            return sorted_items[:limit]
-
-        # LIVE MODE
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
-        params = {"query": query, "limit": limit}
-        if category:
-            params["category"] = category
-        if max_price:
-            params["max_price"] = max_price
-
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{self.base_url}/search", headers=headers, params=params, timeout=10.0)
-            resp.raise_for_status()
-            data = resp.json()
-            return data.get("products", [])
+        return self._search_builtin_catalog(query, category, max_price, limit)
 
     def get_item_by_id(self, item_id: str) -> Optional[Dict[str, Any]]:
         for item in self.catalog:

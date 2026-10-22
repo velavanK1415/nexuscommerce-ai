@@ -108,3 +108,74 @@ async def test_polling_fallback_service():
     reconciled = await polling_service.reconcile_order(order.order_id)
     assert reconciled["reconciled"] is True
     assert order.status == EscrowStatus.FUNDS_AUTHORIZED
+
+
+@pytest.mark.asyncio
+async def test_adversarial_surge_with_toggled_live_mode_resilience():
+    """
+    Quality Audit Test: Verifies that even if live mode is toggled with no API credentials,
+    the adversarial surge test NEVER throws an uncaught error and correctly triggers HITL hold.
+    """
+    orchestrator = NexusOrchestrator()
+    # Simulate user toggling to Live Mode without keys
+    orchestrator.channel3_provider.set_demo_mode(False)
+    orchestrator.paypal_provider.set_demo_mode(False)
+
+    mandate = orchestrator.create_mandate({
+        "title": "NVIDIA H100 GPU Cluster Procurement",
+        "item_name": "NVIDIA H100 SXM5 80GB Server Node",
+        "quantity": 100,
+        "max_unit_price": 32000.0,
+        "max_total_budget": 3200000.0,
+        "target_categories": ["Networking Hardware", "Edge Infrastructure"],
+    })
+
+    session = await orchestrator.run_autonomous_negotiation(
+        mandate_id=mandate.id,
+        simulate_violation="PRICE_SPIKE",
+    )
+    assert session.status.value == "HITL_HOLD"
+    assert "UNIT_PRICE_EXCEEDED" in session.hitl_reason or "violated" in session.hitl_reason
+    assert session.hitl_flagged_proposal is not None
+    assert session.hitl_flagged_proposal.proposed_unit_price > mandate.max_unit_price
+
+
+@pytest.mark.asyncio
+async def test_api_full_lifecycle_demo_endpoint_hitl_surge():
+    """
+    Quality Audit Test: Tests the FastAPI /api/demo/run-full-lifecycle endpoint
+    with simulate_hitl_hold=True and simulate_hitl_hold=False.
+    """
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # Test 1: Adversarial Surge Injection
+        surge_resp = await ac.post("/api/demo/run-full-lifecycle", json={
+            "item_name": "NVIDIA H100 SXM5 80GB Server Node",
+            "quantity": 100,
+            "max_unit_price": 32000.0,
+            "max_total_budget": 3200000.0,
+            "simulate_hitl_hold": True,
+        })
+        assert surge_resp.status_code == 200
+        data = surge_resp.json()
+        assert data["lifecycle_status"] == "HITL_HOLD_TRIGGERED"
+        assert data["session"]["status"] == "HITL_HOLD"
+        assert data["escrow_order"] is None
+        assert "PolicyEngine trapped adversarial surge" in data["message"]
+
+        # Test 2: Happy Path Settlement
+        happy_resp = await ac.post("/api/demo/run-full-lifecycle", json={
+            "item_name": "OptixFabric 48-Port L3 Spine Switch",
+            "quantity": 20,
+            "max_unit_price": 2850.0,
+            "max_total_budget": 57000.0,
+            "simulate_hitl_hold": False,
+        })
+        assert happy_resp.status_code == 200
+        happy_data = happy_resp.json()
+        assert happy_data["lifecycle_status"] == "COMPLETED_SETTLED"
+        assert happy_data["escrow_order"]["status"] == "COMPLETED"
+        assert happy_data["evidence_bundle"]["tamper_evident_valid"] is True

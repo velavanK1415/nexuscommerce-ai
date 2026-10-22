@@ -414,8 +414,8 @@ export default function App() {
       const res = await api.runFullLifecycleDemo(params);
       if (res.mandate) setMandate(res.mandate);
       if (res.negotiation_session || res.session) setSession(res.negotiation_session || res.session);
-      if (res.escrow_order) setOrder(res.escrow_order);
-      if (res.evidence_bundle) setBundle(res.evidence_bundle);
+      setOrder(res.escrow_order || null);
+      setBundle(res.evidence_bundle || null);
       await refreshData();
 
       if (res.lifecycle_status === 'COMPLETED_SETTLED') {

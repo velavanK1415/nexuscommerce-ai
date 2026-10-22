@@ -43,8 +43,9 @@ class VendorBot:
         lead_time = int(vendor_item.get("lead_time_days", 5))
 
         if simulate_violation == "PRICE_SPIKE":
-            # Exceed mandate ceiling aggressively
-            spiked_price = round(catalog_ask * 1.5, 2)
+            # Exceed mandate ceiling aggressively (at least +50% above catalog ask or buyer opening price)
+            reference_price = max(catalog_ask, buyer_price)
+            spiked_price = round(reference_price * 1.5, 2)
             return {
                 "sender": ProposalSender.VENDOR_BOT.value,
                 "unit_price": spiked_price,
