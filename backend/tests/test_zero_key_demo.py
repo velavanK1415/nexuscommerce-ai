@@ -179,3 +179,46 @@ async def test_api_full_lifecycle_demo_endpoint_hitl_surge():
         assert happy_data["lifecycle_status"] == "COMPLETED_SETTLED"
         assert happy_data["escrow_order"]["status"] == "COMPLETED"
         assert happy_data["evidence_bundle"]["tamper_evident_valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_sqlite_persistence_continuity_across_restarts(tmp_path):
+    """
+    Quality Audit Test: Verifies SQLite persistence continuity.
+    Simulates a full backend restart/reload and ensures that newly created
+    mandates, negotiations, escrow orders, and evidence bundles survive intact.
+    """
+    db_file = str(tmp_path / "test_persistence.db")
+
+    # Instance 1: Create transaction
+    orch1 = NexusOrchestrator(db_path=db_file)
+    mandate = orch1.create_mandate({
+        "title": "Persistent Datacenter Order",
+        "item_name": "NexusEdge Pro 100G Modular Edge Router",
+        "quantity": 25,
+        "max_unit_price": 1200.0,
+        "max_total_budget": 30000.0,
+    })
+    session = await orch1.run_autonomous_negotiation(mandate.id)
+    order, bundle = await orch1.finalize_agreement_and_authorize_escrow(session.session_id)
+    order_id = order.order_id
+    bundle_id = bundle.bundle_id
+
+    # Advance Milestone 2
+    updated_order, _ = await orch1.advance_to_shipment_milestone(order_id)
+    assert updated_order.status == EscrowStatus.IN_TRANSIT
+
+    # Instance 2: Simulate full server reboot/reload
+    orch2 = NexusOrchestrator(db_path=db_file)
+    assert mandate.id in orch2.mandates
+    assert session.session_id in orch2.sessions
+    assert order_id in orch2.orders
+    assert bundle_id in orch2.bundles
+
+    reloaded_order = orch2.orders[order_id]
+    assert reloaded_order.status == EscrowStatus.IN_TRANSIT
+    assert reloaded_order.quantity == 25
+    assert reloaded_order.milestones[1].status == MilestoneStepStatus.COMPLETED
+
+    reloaded_bundle = orch2.bundles[bundle_id]
+    assert reloaded_bundle.verify_integrity() is True

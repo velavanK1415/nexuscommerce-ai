@@ -9,6 +9,8 @@ from typing import Dict, Any, Optional, List, Tuple
 import hashlib
 import json
 import logging
+import os
+import sqlite3
 import uuid
 
 from app.models.mandate import ProcurementMandate, MandateStatus
@@ -37,6 +39,7 @@ class NexusOrchestrator:
         paypal_provider: Optional[PayPalProvider] = None,
         channel3_provider: Optional[Channel3Provider] = None,
         auto_seed: bool = True,
+        db_path: Optional[str] = None,
     ):
         self.paypal_provider = paypal_provider or PayPalProvider(demo_mode=True)
         self.channel3_provider = channel3_provider or Channel3Provider(demo_mode=True)
@@ -44,14 +47,70 @@ class NexusOrchestrator:
         self.procure_bot = ProcureBot()
         self.vendor_bot = VendorBot()
 
-        # In-memory stores
+        # In-memory stores (cached for ultra-fast response)
         self.mandates: Dict[str, ProcurementMandate] = {}
         self.sessions: Dict[str, NegotiationSession] = {}
         self.orders: Dict[str, EscrowOrder] = {}
         self.bundles: Dict[str, EvidenceBundle] = {}
 
-        if auto_seed:
+        # SQLite persistent backing store (ensures continuity across restarts)
+        self.db_path = db_path or os.getenv(
+            "NEXUS_DB_PATH",
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "nexus_store.db")),
+        )
+        self._init_sqlite()
+        loaded = self._load_from_sqlite()
+
+        if auto_seed and not loaded:
             self.seed_initial_state()
+
+    def _init_sqlite(self):
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute("CREATE TABLE IF NOT EXISTS mandates (id TEXT PRIMARY KEY, data TEXT)")
+                conn.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, data TEXT)")
+                conn.execute("CREATE TABLE IF NOT EXISTS orders (id TEXT PRIMARY KEY, data TEXT)")
+                conn.execute("CREATE TABLE IF NOT EXISTS bundles (id TEXT PRIMARY KEY, data TEXT)")
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Could not initialize SQLite persistence at {self.db_path}: {e}")
+
+    def _persist(self, table: str, entity_id: str, obj):
+        try:
+            data_json = obj.model_dump_json() if hasattr(obj, "model_dump_json") else json.dumps(obj)
+            with sqlite3.connect(self.db_path) as conn:
+                conn.execute(f"INSERT OR REPLACE INTO {table} (id, data) VALUES (?, ?)", (entity_id, data_json))
+                conn.commit()
+        except Exception as e:
+            logger.debug(f"Failed to persist {table} {entity_id}: {e}")
+
+    def _load_from_sqlite(self) -> bool:
+        has_data = False
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id, data FROM mandates")
+                for m_id, data in cursor.fetchall():
+                    self.mandates[m_id] = ProcurementMandate.model_validate_json(data)
+                    has_data = True
+
+                cursor.execute("SELECT id, data FROM sessions")
+                for s_id, data in cursor.fetchall():
+                    self.sessions[s_id] = NegotiationSession.model_validate_json(data)
+                    has_data = True
+
+                cursor.execute("SELECT id, data FROM orders")
+                for o_id, data in cursor.fetchall():
+                    self.orders[o_id] = EscrowOrder.model_validate_json(data)
+                    has_data = True
+
+                cursor.execute("SELECT id, data FROM bundles")
+                for b_id, data in cursor.fetchall():
+                    self.bundles[b_id] = EvidenceBundle.model_validate_json(data)
+                    has_data = True
+        except Exception as e:
+            logger.warning(f"Failed to load records from SQLite {self.db_path}: {e}")
+        return has_data
 
     def seed_initial_state(self):
         """
@@ -90,6 +149,7 @@ class NexusOrchestrator:
         )
         mandate.sign()
         self.mandates[mandate.id] = mandate
+        self._persist("mandates", mandate.id, mandate)
 
         agreed_fields = {
             "agreement_id": "AGR-H100-2026-CERTIFIED",
@@ -215,6 +275,7 @@ class NexusOrchestrator:
             ],
         )
         self.sessions[session.session_id] = session
+        self._persist("sessions", session.session_id, session)
 
         order = EscrowOrder(
             order_id="ESC-2026-H100",
@@ -314,6 +375,8 @@ class NexusOrchestrator:
         order.evidence_bundle_id = bundle.bundle_id
         self.orders[order.order_id] = order
         self.bundles[bundle.bundle_id] = bundle
+        self._persist("orders", order.order_id, order)
+        self._persist("bundles", bundle.bundle_id, bundle)
 
     def create_mandate(self, mandate_data: Dict[str, Any]) -> ProcurementMandate:
         """
@@ -351,6 +414,7 @@ class NexusOrchestrator:
         # Sign the mandate
         mandate.sign()
         self.mandates[mandate.id] = mandate
+        self._persist("mandates", mandate.id, mandate)
         return mandate
 
     async def run_autonomous_negotiation(
@@ -434,6 +498,8 @@ class NexusOrchestrator:
                 session.hitl_reason = decision_buyer.reason
                 session.hitl_flagged_proposal = buyer_prop
                 self.sessions[session_id] = session
+                self._persist("sessions", session_id, session)
+                self._persist("mandates", mandate.id, mandate)
                 return session
 
             session.proposals.append(buyer_prop)
@@ -470,6 +536,8 @@ class NexusOrchestrator:
                     session.proposals.append(vendor_prop)
                 self.sessions[session_id] = session
                 mandate.status = MandateStatus.HITL_HOLD
+                self._persist("sessions", session_id, session)
+                self._persist("mandates", mandate.id, mandate)
                 return session
 
             session.proposals.append(vendor_prop)
@@ -486,6 +554,8 @@ class NexusOrchestrator:
             session.hitl_flagged_proposal = session.proposals[-1] if session.proposals else None
             mandate.status = MandateStatus.HITL_HOLD
             self.sessions[session_id] = session
+            self._persist("sessions", session_id, session)
+            self._persist("mandates", mandate.id, mandate)
             return session
 
         last_proposal = session.proposals[-1]
@@ -539,6 +609,8 @@ class NexusOrchestrator:
         session.agreement = agreement
         self.sessions[session_id] = session
         mandate.status = MandateStatus.AGREED
+        self._persist("sessions", session_id, session)
+        self._persist("mandates", mandate.id, mandate)
         return session
 
     async def finalize_agreement_and_authorize_escrow(
@@ -577,6 +649,9 @@ class NexusOrchestrator:
 
         self.orders[escrow_order.order_id] = escrow_order
         self.bundles[bundle.bundle_id] = bundle
+        self._persist("orders", escrow_order.order_id, escrow_order)
+        self._persist("bundles", bundle.bundle_id, bundle)
+        self._persist("mandates", mandate.id, mandate)
         return escrow_order, bundle
 
     async def advance_to_shipment_milestone(
@@ -633,6 +708,11 @@ class NexusOrchestrator:
         mandate = self.mandates.get(updated_order.mandate_id)
         if mandate:
             mandate.status = MandateStatus.IN_DELIVERY
+            self._persist("mandates", mandate.id, mandate)
+
+        self._persist("orders", updated_order.order_id, updated_order)
+        if bundle:
+            self._persist("bundles", bundle.bundle_id, bundle)
 
         return updated_order, bundle
 
@@ -668,6 +748,11 @@ class NexusOrchestrator:
         mandate = self.mandates.get(updated_order.mandate_id)
         if mandate:
             mandate.status = MandateStatus.COMPLETED
+            self._persist("mandates", mandate.id, mandate)
+
+        self._persist("orders", updated_order.order_id, updated_order)
+        if bundle:
+            self._persist("bundles", bundle.bundle_id, bundle)
 
         return updated_order, bundle
 
@@ -690,4 +775,6 @@ class NexusOrchestrator:
             supervisor_notes=supervisor_notes,
         )
         mandate.status = MandateStatus.AGREED
+        self._persist("sessions", session.session_id, session)
+        self._persist("mandates", mandate.id, mandate)
         return agreement
