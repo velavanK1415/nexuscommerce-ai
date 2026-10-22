@@ -28,9 +28,9 @@ tmux new-session -d -s nexus -n "backend" \
 tmux new-window -t nexus -n "frontend" \
   "cd $PROJECT_DIR/frontend && exec yarn dev --host 0.0.0.0 --port 5173 2>&1 | tee $PROJECT_DIR/frontend.log"
 
-# 4. Launch Cloudflare Tunnel in Window 2 (using HTTP/2 TCP protocol to avoid mobile carrier UDP/QUIC drops)
+# 4. Launch Cloudflare Tunnel in Window 2 (using HTTP/2 TCP protocol with auto-retry loop)
 tmux new-window -t nexus -n "tunnel" \
-  "exec /usr/local/bin/cloudflared tunnel --protocol http2 --url http://127.0.0.1:5173 2>&1 | tee $PROJECT_DIR/tunnel.log"
+  "bash -c 'while true; do echo \"Attempting Cloudflare quick tunnel connection...\"; /usr/local/bin/cloudflared tunnel --protocol http2 --url http://127.0.0.1:5173 2>&1 | tee $PROJECT_DIR/tunnel.log; sleep 2; done'"
 
 echo "Waiting for services to initialize..."
 sleep 5
