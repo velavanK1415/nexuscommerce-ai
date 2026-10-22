@@ -628,6 +628,15 @@ export default function App() {
               loading={loading}
               onStartStepByStepMilestones={handleStartStepByStepMilestones}
             />
+
+            {/* 6. AG Studio Enterprise Spend Intelligence ($5,000 Sponsor Track) */}
+            <div className="pt-2">
+              <AGStudioSpendGrid
+                summary={summary}
+                gridData={gridData}
+                onRefresh={refreshData}
+              />
+            </div>
           </div>
         )}
 

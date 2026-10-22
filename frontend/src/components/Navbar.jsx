@@ -201,6 +201,50 @@ export default function Navbar({
           </button>
         </div>
       </div>
+
+      {/* Mobile & Tablet Navigation Tabs Bar - Visible on screens < 1024px */}
+      <div className="lg:hidden border-t border-slate-800/80 bg-slate-950/80 px-2 py-1.5 backdrop-blur-sm">
+        <div className="max-w-7xl mx-auto flex items-center justify-around space-x-1 sm:space-x-2">
+          <button
+            onClick={() => setActiveTab('cockpit')}
+            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center space-x-1.5 ${
+              activeTab === 'cockpit'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200 bg-slate-900/50'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5 text-cyan-400" />
+            <span>Cockpit</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+              activeTab === 'analytics'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-1 ring-amber-400/50'
+                : 'text-amber-300 hover:text-white bg-amber-500/10 border border-amber-500/30'
+            }`}
+          >
+            <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
+            <span>AG Studio</span>
+            <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 font-extrabold border border-amber-500/30">
+              $5k
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('evidence')}
+            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all flex items-center justify-center space-x-1.5 ${
+              activeTab === 'evidence'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                : 'text-slate-400 hover:text-slate-200 bg-slate-900/50'
+            }`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Vault</span>
+          </button>
+        </div>
+      </div>
     </header>
   );
 }
